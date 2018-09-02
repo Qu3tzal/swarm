@@ -8,7 +8,6 @@ _swarm 🐜_'s objective is to explore flocking and swarm behavior. It is based 
 - [X] Pursue
 - [X] Evade
 - [ ] Wander
-- [ ] Obstacle avoidance
 
 #### Flock
 - [ ] Separation
