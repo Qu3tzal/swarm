@@ -19,8 +19,7 @@ namespace constants {
     const float ViewSpeed = 300.f;
     const float MinSpeed = 0.1f;
     const float DefaultMaxSpeed = 200.f;
-    const sf::Vector2f GravityForce = sf::Vector2f(0.f, 98.1f);
-    const unsigned int NumberOfEntities = 20;
+    const float MinMovement = 0.1f;
 }
 
 /**
@@ -377,8 +376,9 @@ class Agent {
         explicit Agent() {}
         virtual ~Agent() {}
 
-        std::size_t target; // The ID of the target (only needed for some behaviors).
         std::size_t body; // The ID of the agent's body.
+        std::size_t targetBody; // The ID of the target (only needed for some behaviors).
+        sf::Vector2f targetPosition; // The position of the target when its not a body (only needed for some behaviors).
 };
 
 // The solo agent adopts one or multiple steering behaviors.
@@ -406,7 +406,13 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
             const SoloAgentBehavior& behavior = behaviorPair.first;
 
             if (behavior == SoloAgentBehavior::Seek) {
+                // For the seek behavior, we want the agent to follow the target.
+                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
+                sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
 
+                // Only apply the movement if it is big enough to prevent wiggles.
+                if (maths::isGreater(maths::length(movement), constants::MinMovement))
+                    bodies[agent.body].movement.velocity += movement;
             } else if (behavior == SoloAgentBehavior::Flee) {
 
             } else if (behavior == SoloAgentBehavior::Pursue) {
@@ -506,10 +512,6 @@ struct PerformanceMetrics {
 int main(int argc, char *argv[]) {
     // Init graphics.
     sf::RenderWindow window(sf::VideoMode(1280, 720), constants::WindowTitle);
-    sf::View view = window.getView();
-    view.setSize(3100, 3100);
-    view.setCenter(0, 0);
-    window.setView(view);
 
     // Init random number generator.
     std::random_device rd;
@@ -519,13 +521,29 @@ int main(int argc, char *argv[]) {
     // Init world's physics.
     std::vector<SimplePointBody> bodies;
 
+    SimplePointBody agentBody;
+    agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
+    agentBody.hitbox.points.push_back(sf::Vector2f(0, 30));
+    agentBody.hitbox.points.push_back(sf::Vector2f(30, 30));
+    agentBody.hitbox.points.push_back(sf::Vector2f(30, 0));
 
+    // Compute the hitbox's axes and circle.
+    agentBody.hitbox.computeAxes();
+    agentBody.hitbox.computeCircleHitbox();
+
+    bodies.push_back(agentBody);
 
     // Init AIs.
     std::vector<SoloAgent> soloAgents;
     std::vector<SwarmAgent> swarmAgents;
 
     // Create a solo agent that seeks the cursor.
+    SoloAgent agent;
+    agent.body = 0;
+    agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Seek, 1.f));
+
+    // Add the agent to the list of the solo agents.
+    soloAgents.push_back(agent);
 
     // Init time management.
     sf::Clock gameClock;
@@ -581,6 +599,9 @@ int main(int argc, char *argv[]) {
                 view.setCenter(view.getCenter() + movement);
                 window.setView(view);
             }
+
+            // Update the target position for the agent.
+            soloAgents[0].targetPosition = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
             // Simulate the behaviors.
             simulateSoloBehaviors(soloAgents, bodies);
