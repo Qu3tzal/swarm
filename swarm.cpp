@@ -20,9 +20,12 @@ namespace constants {
     const float MinSpeed = 0.1f;
     const float DefaultMaxSpeed = 200.f;
     const float MinMovement = 0.1f;
+    const float SeekRelativeDistance = 0.25f;
     const float FleeRelativeDistance = 5.f;
     const float SizeOfAgents = 20.f;
-    const std::size_t NumberOfFleeingAgents = 20;
+    const float PursueRelativeDistance = 3.f;
+    const std::size_t NumberOfFleeingAgents = 30;
+    const std::size_t NumberOfPursuingAgents = 10;
 }
 
 /**
@@ -410,29 +413,69 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
             const SoloAgentBehavior& behavior = behaviorPair.first;
 
             if (behavior == SoloAgentBehavior::Seek) {
-                // For the seek behavior, we want the agent to follow the target.
-                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
-                sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
-
-                // Only apply the movement if it is big enough to prevent wiggles.
-                if (maths::isGreater(maths::length(movement), constants::MinMovement))
-                    bodies[agent.body].movement.velocity += movement;
-            } else if (behavior == SoloAgentBehavior::Flee) {
-                // For the flee behavior, we want the agent to follow the target.
+                /**
+                 * For the seek behavior, we want the agent to follow the target.
+                 */
                 sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
                 float bodyRadius = bodies[agent.body].hitbox.radius;
 
-                // Compute the distance to the target. We only flee if the distance is close (close being a constant factor times the body radius).
-                if (maths::length(agent.targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
+                // Compute the distance to the target. We only seek if the distance is big (big being a constant factor times the body radius).
+                // This is for demonstration purposes, because we don't want the agents to wiggle when they reach the seeking position.
+                if (maths::length(agent.targetPosition - bodyCenter) > constants::SeekRelativeDistance * bodyRadius) {
                     sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
 
                     // Only apply the movement if it is big enough to prevent wiggles.
+                    if (maths::isGreater(maths::length(movement), constants::MinMovement))
+                        bodies[agent.body].movement.velocity += movement;
+                }
+            } else if (behavior == SoloAgentBehavior::Flee) {
+                /**
+                 * For the flee behavior, we want the agent to follow the target.
+                 */
+                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
+                float bodyRadius = bodies[agent.body].hitbox.radius;
+
+                // Compute the distance to the target. We only flee if the distance is small (small being a constant factor times the body radius).
+                if (maths::length(agent.targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
+
                     bodies[agent.body].movement.velocity -= movement;
                 }
             } else if (behavior == SoloAgentBehavior::Pursue) {
+                /**
+                 * For the pursue behavior, we want the agent to follow the target body.
+                 */
+                // Get the position of the body we want to pursue.
+                sf::Vector2f targetPosition = bodies[agent.targetBody].movement.position + bodies[agent.targetBody].hitbox.gravitationalCenter;
 
+                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
+                float bodyRadius = bodies[agent.body].hitbox.radius;
+
+                // Compute the distance to the target. We only pursue if the distance is big (big being a constant factor times the body radius).
+                // This is for demonstration purposes, because we don't want the agents to block each other.
+                if (maths::length(targetPosition - bodyCenter) > constants::PursueRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(targetPosition - bodyCenter);
+
+                    // Only apply the movement if it is big enough to prevent wiggles.
+                    if (maths::isGreater(maths::length(movement), constants::MinMovement))
+                        bodies[agent.body].movement.velocity += movement;
+                }
             } else if (behavior == SoloAgentBehavior::Evade) {
+                /**
+                 * For the evade behavior, we want the agent to follow the target body.
+                 */
+                // Get the position of the body we want to evade.
+                sf::Vector2f targetPosition = bodies[agent.targetBody].movement.position + bodies[agent.targetBody].hitbox.gravitationalCenter;
 
+                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
+                float bodyRadius = bodies[agent.body].hitbox.radius;
+
+                // Compute the distance to the target. We only evade if the distance is small (small being a constant factor times the body radius).
+                if (maths::length(targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(targetPosition - bodyCenter);
+
+                    bodies[agent.body].movement.velocity -= movement;
+                }
             } else if (behavior == SoloAgentBehavior::Wander) {
 
             } else if (behavior == SoloAgentBehavior::AvoidObstacle) {
@@ -536,6 +579,10 @@ int main(int argc, char *argv[]) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
 
     // Init world's physics.
+    // Contains the agents bodies arranged in the given order :
+    //      the first agent
+    //      the fleeing agents
+    //      the pursuing agents
     std::vector<SimplePointBody> bodies;
 
     for (std::size_t i(0) ; i < constants::NumberOfFleeingAgents ; ++i) {
@@ -550,8 +597,27 @@ int main(int argc, char *argv[]) {
         agentBody.hitbox.computeCircleHitbox();
 
         // Random position.
-        agentBody.movement.position.x = 500.f + (distribution(mt) - 0.5f) * 250.f;
-        agentBody.movement.position.y = 500.f + (distribution(mt) - 0.5f) * 250.f;
+        agentBody.movement.position.x = 500.f + (distribution(mt) - 0.5f) * 500.f;
+        agentBody.movement.position.y = 500.f + (distribution(mt) - 0.5f) * 500.f;
+
+        bodies.push_back(agentBody);
+    }
+
+    // Create the pursuing agents as a line.
+    for (std::size_t i(0) ; i < constants::NumberOfPursuingAgents ; ++i) {
+        SimplePointBody agentBody;
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, 0));
+
+        // Compute the hitbox's axes and circle.
+        agentBody.hitbox.computeAxes();
+        agentBody.hitbox.computeCircleHitbox();
+
+        // Random position.
+        agentBody.movement.position.x = 100.f + 100.f * i;
+        agentBody.movement.position.y = 200.f;
 
         bodies.push_back(agentBody);
     }
@@ -573,6 +639,23 @@ int main(int argc, char *argv[]) {
         SoloAgent agent;
         agent.body = i + 1;
         agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Flee, 1.f));
+
+        // Add the agent to the list of the solo agents.
+        soloAgents.push_back(agent);
+    }
+
+    // Create a chain of solo agents that pursue one another.
+    // The first of these pursuing agents pursues the agent that seek the cursor.
+    for (std::size_t i(0) ; i < constants::NumberOfPursuingAgents ; ++i) {
+        SoloAgent agent;
+        agent.body = i + 1 + constants::NumberOfFleeingAgents;
+        agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Pursue, 1.f));
+
+        // The first agent of the chain pursues the body of the very first solo agent.
+        if (i == 0)
+            agent.targetBody = 0;
+        else
+            agent.targetBody = 1 + constants::NumberOfFleeingAgents + i - 1; // This is a little dirty. The offset of the bodies of the pursuing agents is : the first agent + the fleeing agents.else
 
         // Add the agent to the list of the solo agents.
         soloAgents.push_back(agent);
@@ -633,11 +716,12 @@ int main(int argc, char *argv[]) {
                 window.setView(view);
             }
 
-            // Update the target position for the agent.
+            // Update the target position for the agents.
             sf::Vector2f cursorPosition = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
-            for (SoloAgent& agent : soloAgents)
-                agent.targetPosition = cursorPosition;
+            // Only the first agent and the agents that flees needs to have their target position updated as the mouse cursor position.
+            for (std::size_t i(0) ; i < 1 + constants::NumberOfFleeingAgents ; ++i)
+                soloAgents[i].targetPosition = cursorPosition;
 
             // Simulate the behaviors.
             simulateSoloBehaviors(soloAgents, bodies);
