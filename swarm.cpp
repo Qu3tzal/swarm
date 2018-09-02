@@ -24,8 +24,9 @@ namespace constants {
     const float FleeRelativeDistance = 5.f;
     const float SizeOfAgents = 20.f;
     const float PursueRelativeDistance = 3.f;
-    const std::size_t NumberOfFleeingAgents = 30;
+    const std::size_t NumberOfFleeingAgents = 20;
     const std::size_t NumberOfPursuingAgents = 10;
+    const std::size_t PursueEvadeCircleSize = 10;
 }
 
 /**
@@ -359,7 +360,7 @@ std::vector<HitboxCollision> detectCollisions(std::vector<SimplePointBody>& bodi
 /**
  * AI.
  */
-enum class SoloAgentBehavior {
+enum class SoloAgentBehaviorType {
     Seek,
     Flee,
     Pursue,
@@ -368,12 +369,26 @@ enum class SoloAgentBehavior {
     AvoidObstacle
 };
 
-enum class SwarmAgentBehavior {
+enum class SwarmAgentBehaviorType {
     Separate,
     Cohesion,
     Align,
     FollowLeader,
     Queue
+};
+
+struct SoloAgentBehavior {
+    SoloAgentBehaviorType type;
+
+    std::size_t targetBody; // The ID of the target (only needed for some behaviors).
+    sf::Vector2f targetPosition; // The position of the target when its not a body (only needed for some behaviors).
+};
+
+struct SwarmAgentBehavior {
+    SwarmAgentBehaviorType type;
+
+    std::size_t targetBody; // The ID of the target (only needed for some behaviors).
+    sf::Vector2f targetPosition; // The position of the target when its not a body (only needed for some behaviors).
 };
 
 // The basic agent class.
@@ -384,8 +399,6 @@ class Agent {
         virtual ~Agent() {}
 
         std::size_t body; // The ID of the agent's body.
-        std::size_t targetBody; // The ID of the target (only needed for some behaviors).
-        sf::Vector2f targetPosition; // The position of the target when its not a body (only needed for some behaviors).
 };
 
 // The solo agent adopts one or multiple steering behaviors.
@@ -412,7 +425,7 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
         for (const std::pair<SoloAgentBehavior, float>& behaviorPair : agent.behaviors) {
             const SoloAgentBehavior& behavior = behaviorPair.first;
 
-            if (behavior == SoloAgentBehavior::Seek) {
+            if (behavior.type == SoloAgentBehaviorType::Seek) {
                 /**
                  * For the seek behavior, we want the agent to follow the target.
                  */
@@ -421,14 +434,14 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
 
                 // Compute the distance to the target. We only seek if the distance is big (big being a constant factor times the body radius).
                 // This is for demonstration purposes, because we don't want the agents to wiggle when they reach the seeking position.
-                if (maths::length(agent.targetPosition - bodyCenter) > constants::SeekRelativeDistance * bodyRadius) {
-                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
+                if (maths::length(behavior.targetPosition - bodyCenter) > constants::SeekRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(behavior.targetPosition - bodyCenter);
 
                     // Only apply the movement if it is big enough to prevent wiggles.
                     if (maths::isGreater(maths::length(movement), constants::MinMovement))
                         bodies[agent.body].movement.velocity += movement;
                 }
-            } else if (behavior == SoloAgentBehavior::Flee) {
+            } else if (behavior.type == SoloAgentBehaviorType::Flee) {
                 /**
                  * For the flee behavior, we want the agent to follow the target.
                  */
@@ -436,17 +449,17 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
                 float bodyRadius = bodies[agent.body].hitbox.radius;
 
                 // Compute the distance to the target. We only flee if the distance is small (small being a constant factor times the body radius).
-                if (maths::length(agent.targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
-                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
+                if (maths::length(behavior.targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(behavior.targetPosition - bodyCenter);
 
                     bodies[agent.body].movement.velocity -= movement;
                 }
-            } else if (behavior == SoloAgentBehavior::Pursue) {
+            } else if (behavior.type == SoloAgentBehaviorType::Pursue) {
                 /**
                  * For the pursue behavior, we want the agent to follow the target body.
                  */
                 // Get the position of the body we want to pursue.
-                sf::Vector2f targetPosition = bodies[agent.targetBody].movement.position + bodies[agent.targetBody].hitbox.gravitationalCenter;
+                sf::Vector2f targetPosition = bodies[behavior.targetBody].movement.position + bodies[behavior.targetBody].hitbox.gravitationalCenter;
 
                 sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
                 float bodyRadius = bodies[agent.body].hitbox.radius;
@@ -460,12 +473,12 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
                     if (maths::isGreater(maths::length(movement), constants::MinMovement))
                         bodies[agent.body].movement.velocity += movement;
                 }
-            } else if (behavior == SoloAgentBehavior::Evade) {
+            } else if (behavior.type == SoloAgentBehaviorType::Evade) {
                 /**
                  * For the evade behavior, we want the agent to follow the target body.
                  */
                 // Get the position of the body we want to evade.
-                sf::Vector2f targetPosition = bodies[agent.targetBody].movement.position + bodies[agent.targetBody].hitbox.gravitationalCenter;
+                sf::Vector2f targetPosition = bodies[behavior.targetBody].movement.position + bodies[behavior.targetBody].hitbox.gravitationalCenter;
 
                 sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
                 float bodyRadius = bodies[agent.body].hitbox.radius;
@@ -476,9 +489,9 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
 
                     bodies[agent.body].movement.velocity -= movement;
                 }
-            } else if (behavior == SoloAgentBehavior::Wander) {
+            } else if (behavior.type == SoloAgentBehaviorType::Wander) {
 
-            } else if (behavior == SoloAgentBehavior::AvoidObstacle) {
+            } else if (behavior.type == SoloAgentBehaviorType::AvoidObstacle) {
 
             }
         }
@@ -491,15 +504,15 @@ void simulateSwarmBehaviors(std::vector<SwarmAgent>& agents, std::vector<SimpleP
         for (const std::pair<SwarmAgentBehavior, float>& behaviorPair : agent.behaviors) {
             const SwarmAgentBehavior& behavior = behaviorPair.first;
 
-            if (behavior == SwarmAgentBehavior::Separate) {
+            if (behavior.type == SwarmAgentBehaviorType::Separate) {
 
-            } else if (behavior == SwarmAgentBehavior::Cohesion) {
+            } else if (behavior.type == SwarmAgentBehaviorType::Cohesion) {
 
-            } else if (behavior == SwarmAgentBehavior::Align) {
+            } else if (behavior.type == SwarmAgentBehaviorType::Align) {
 
-            } else if (behavior == SwarmAgentBehavior::FollowLeader) {
+            } else if (behavior.type == SwarmAgentBehaviorType::FollowLeader) {
 
-            } else if (behavior == SwarmAgentBehavior::Queue) {
+            } else if (behavior.type == SwarmAgentBehaviorType::Queue) {
 
             }
         }
@@ -583,7 +596,22 @@ int main(int argc, char *argv[]) {
     //      the first agent
     //      the fleeing agents
     //      the pursuing agents
+    //      the pursuing-evading agents
     std::vector<SimplePointBody> bodies;
+
+    {
+        SimplePointBody agentBody;
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, 0));
+
+        // Compute the hitbox's axes and circle.
+        agentBody.hitbox.computeAxes();
+        agentBody.hitbox.computeCircleHitbox();
+
+        bodies.push_back(agentBody);
+    }
 
     for (std::size_t i(0) ; i < constants::NumberOfFleeingAgents ; ++i) {
         SimplePointBody agentBody;
@@ -622,23 +650,53 @@ int main(int argc, char *argv[]) {
         bodies.push_back(agentBody);
     }
 
+    // Create the evading agents as a circle.
+    for (std::size_t i(0) ; i < constants::PursueEvadeCircleSize ; ++i) {
+        const sf::Vector2f center(500.f, 500.f);
+        const float radius = 150.f;
+
+        SimplePointBody agentBody;
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, 0));
+
+        // Compute the hitbox's axes and circle.
+        agentBody.hitbox.computeAxes();
+        agentBody.hitbox.computeCircleHitbox();
+
+        // Random position.
+        agentBody.movement.position.x = center.x + radius * std::cos(i * 2.f * M_PI / constants::PursueEvadeCircleSize);
+        agentBody.movement.position.y = center.y + radius * std::sin(i * 2.f * M_PI / constants::PursueEvadeCircleSize);
+
+        bodies.push_back(agentBody);
+    }
+
     // Init AIs.
     std::vector<SoloAgent> soloAgents;
     std::vector<SwarmAgent> swarmAgents;
 
     // Create a solo agent that seeks the cursor.
-    SoloAgent agent;
-    agent.body = 0;
-    agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Seek, 1.f));
+    {
+        SoloAgentBehavior behavior;
+        behavior.type = SoloAgentBehaviorType::Seek;
 
-    // Add the agent to the list of the solo agents.
-    soloAgents.push_back(agent);
+        SoloAgent agent;
+        agent.body = 0;
+        agent.behaviors.push_back(std::make_pair(behavior, 1.f));
+
+        // Add the agent to the list of the solo agents.
+        soloAgents.push_back(agent);
+    }
 
     // Create solo agents that flee the cursor.
     for (std::size_t i(0) ; i < constants::NumberOfFleeingAgents ; ++i) {
+        SoloAgentBehavior behavior;
+        behavior.type = SoloAgentBehaviorType::Flee;
+
         SoloAgent agent;
         agent.body = i + 1;
-        agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Flee, 1.f));
+        agent.behaviors.push_back(std::make_pair(behavior, 1.f));
 
         // Add the agent to the list of the solo agents.
         soloAgents.push_back(agent);
@@ -647,15 +705,51 @@ int main(int argc, char *argv[]) {
     // Create a chain of solo agents that pursue one another.
     // The first of these pursuing agents pursues the agent that seek the cursor.
     for (std::size_t i(0) ; i < constants::NumberOfPursuingAgents ; ++i) {
-        SoloAgent agent;
-        agent.body = i + 1 + constants::NumberOfFleeingAgents;
-        agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Pursue, 1.f));
+        SoloAgentBehavior behavior;
+        behavior.type = SoloAgentBehaviorType::Pursue;
 
         // The first agent of the chain pursues the body of the very first solo agent.
         if (i == 0)
-            agent.targetBody = 0;
+            behavior.targetBody = 0;
         else
-            agent.targetBody = 1 + constants::NumberOfFleeingAgents + i - 1; // This is a little dirty. The offset of the bodies of the pursuing agents is : the first agent + the fleeing agents.else
+            behavior.targetBody = 1 + constants::NumberOfFleeingAgents + i - 1; // This is a little dirty. The offset of the bodies of the pursuing agents is : the first agent + the fleeing agents.
+
+        SoloAgent agent;
+        agent.body = i + 1 + constants::NumberOfFleeingAgents;
+        agent.behaviors.push_back(std::make_pair(behavior, 1.f));
+
+        // Add the agent to the list of the solo agents.
+        soloAgents.push_back(agent);
+    }
+
+    // Create a circle of solo agents that evade one another.
+    for (std::size_t i(0) ; i < constants::PursueEvadeCircleSize ; ++i) {
+        const std::size_t offset = 1 + constants::NumberOfFleeingAgents + constants::NumberOfPursuingAgents;
+
+        SoloAgentBehavior pursueBehavior, evadeBehavior;
+        pursueBehavior.type = SoloAgentBehaviorType::Pursue;
+        evadeBehavior.type = SoloAgentBehaviorType::Evade;
+
+        if (i == 0) {
+            // Pursue the last, evade the next.
+            pursueBehavior.targetBody = offset + constants::PursueEvadeCircleSize - 1;
+            evadeBehavior.targetBody = offset + i + 1;
+        } else if (i == constants::PursueEvadeCircleSize - 1) {
+            // Pursue the previous, evade the first.
+            pursueBehavior.targetBody = offset + i - 1;
+            evadeBehavior.targetBody = offset;
+        } else {
+            // Pursue the previous, evade the next.
+            // This is a little dirty.
+            // The offset of the bodies of the pursuing agents is : the first agent + the fleeing agents + the pursuing agents.
+            pursueBehavior.targetBody = offset + i - 1;
+            evadeBehavior.targetBody = offset + i + 1;
+        }
+
+        SoloAgent agent;
+        agent.body = i + 1 + constants::NumberOfFleeingAgents + constants::NumberOfPursuingAgents;
+        agent.behaviors.push_back(std::make_pair(pursueBehavior, 0.5f));
+        agent.behaviors.push_back(std::make_pair(evadeBehavior, 0.5f));
 
         // Add the agent to the list of the solo agents.
         soloAgents.push_back(agent);
@@ -720,8 +814,9 @@ int main(int argc, char *argv[]) {
             sf::Vector2f cursorPosition = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
             // Only the first agent and the agents that flees needs to have their target position updated as the mouse cursor position.
-            for (std::size_t i(0) ; i < 1 + constants::NumberOfFleeingAgents ; ++i)
-                soloAgents[i].targetPosition = cursorPosition;
+            for (std::size_t i(0) ; i < 1 + constants::NumberOfFleeingAgents ; ++i) {
+                soloAgents[i].behaviors[0].first.targetPosition = cursorPosition;
+            }
 
             // Simulate the behaviors.
             simulateSoloBehaviors(soloAgents, bodies);
