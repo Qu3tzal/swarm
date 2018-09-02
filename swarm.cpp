@@ -20,6 +20,9 @@ namespace constants {
     const float MinSpeed = 0.1f;
     const float DefaultMaxSpeed = 200.f;
     const float MinMovement = 0.1f;
+    const float FleeRelativeDistance = 5.f;
+    const float SizeOfAgents = 20.f;
+    const std::size_t NumberOfFleeingAgents = 20;
 }
 
 /**
@@ -168,6 +171,7 @@ void integrateMovement(std::vector<SimplePointBody>& bodies, const sf::Time& tim
         }
 
         body.movement.position += body.movement.velocity * timeStep.asSeconds();
+        body.movement.velocity = sf::Vector2f(0.f, 0.f); // Reset the velocity to prevent the agents from going too far.
         body.movement.acceleration = sf::Vector2f(0.f, 0.f);
     }
 }
@@ -414,7 +418,17 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
                 if (maths::isGreater(maths::length(movement), constants::MinMovement))
                     bodies[agent.body].movement.velocity += movement;
             } else if (behavior == SoloAgentBehavior::Flee) {
+                // For the flee behavior, we want the agent to follow the target.
+                sf::Vector2f bodyCenter = bodies[agent.body].movement.position + bodies[agent.body].hitbox.gravitationalCenter;
+                float bodyRadius = bodies[agent.body].hitbox.radius;
 
+                // Compute the distance to the target. We only flee if the distance is close (close being a constant factor times the body radius).
+                if (maths::length(agent.targetPosition - bodyCenter) < constants::FleeRelativeDistance * bodyRadius) {
+                    sf::Vector2f movement = bodies[agent.body].movement.maxSpeed * maths::normalize(agent.targetPosition - bodyCenter);
+
+                    // Only apply the movement if it is big enough to prevent wiggles.
+                    bodies[agent.body].movement.velocity -= movement;
+                }
             } else if (behavior == SoloAgentBehavior::Pursue) {
 
             } else if (behavior == SoloAgentBehavior::Evade) {
@@ -512,6 +526,9 @@ struct PerformanceMetrics {
 int main(int argc, char *argv[]) {
     // Init graphics.
     sf::RenderWindow window(sf::VideoMode(1280, 720), constants::WindowTitle);
+    sf::View view = window.getView();
+    view.setCenter(500, 500);
+    window.setView(view);
 
     // Init random number generator.
     std::random_device rd;
@@ -521,17 +538,23 @@ int main(int argc, char *argv[]) {
     // Init world's physics.
     std::vector<SimplePointBody> bodies;
 
-    SimplePointBody agentBody;
-    agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
-    agentBody.hitbox.points.push_back(sf::Vector2f(0, 30));
-    agentBody.hitbox.points.push_back(sf::Vector2f(30, 30));
-    agentBody.hitbox.points.push_back(sf::Vector2f(30, 0));
+    for (std::size_t i(0) ; i < constants::NumberOfFleeingAgents ; ++i) {
+        SimplePointBody agentBody;
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, 0));
+        agentBody.hitbox.points.push_back(sf::Vector2f(0, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, constants::SizeOfAgents));
+        agentBody.hitbox.points.push_back(sf::Vector2f(constants::SizeOfAgents, 0));
 
-    // Compute the hitbox's axes and circle.
-    agentBody.hitbox.computeAxes();
-    agentBody.hitbox.computeCircleHitbox();
+        // Compute the hitbox's axes and circle.
+        agentBody.hitbox.computeAxes();
+        agentBody.hitbox.computeCircleHitbox();
 
-    bodies.push_back(agentBody);
+        // Random position.
+        agentBody.movement.position.x = 500.f + (distribution(mt) - 0.5f) * 250.f;
+        agentBody.movement.position.y = 500.f + (distribution(mt) - 0.5f) * 250.f;
+
+        bodies.push_back(agentBody);
+    }
 
     // Init AIs.
     std::vector<SoloAgent> soloAgents;
@@ -544,6 +567,16 @@ int main(int argc, char *argv[]) {
 
     // Add the agent to the list of the solo agents.
     soloAgents.push_back(agent);
+
+    // Create solo agents that flee the cursor.
+    for (std::size_t i(0) ; i < constants::NumberOfFleeingAgents ; ++i) {
+        SoloAgent agent;
+        agent.body = i + 1;
+        agent.behaviors.push_back(std::make_pair(SoloAgentBehavior::Flee, 1.f));
+
+        // Add the agent to the list of the solo agents.
+        soloAgents.push_back(agent);
+    }
 
     // Init time management.
     sf::Clock gameClock;
@@ -601,7 +634,10 @@ int main(int argc, char *argv[]) {
             }
 
             // Update the target position for the agent.
-            soloAgents[0].targetPosition = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+            sf::Vector2f cursorPosition = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+
+            for (SoloAgent& agent : soloAgents)
+                agent.targetPosition = cursorPosition;
 
             // Simulate the behaviors.
             simulateSoloBehaviors(soloAgents, bodies);
