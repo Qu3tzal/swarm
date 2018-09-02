@@ -354,7 +354,7 @@ std::vector<HitboxCollision> detectCollisions(std::vector<SimplePointBody>& bodi
  * AI.
  */
 enum class SoloAgentBehavior {
-    Sleek,
+    Seek,
     Flee,
     Pursue,
     Evade,
@@ -405,7 +405,7 @@ void simulateSoloBehaviors(std::vector<SoloAgent>& agents, std::vector<SimplePoi
         for (const std::pair<SoloAgentBehavior, float>& behaviorPair : agent.behaviors) {
             const SoloAgentBehavior& behavior = behaviorPair.first;
 
-            if (behavior == SoloAgentBehavior::Sleek) {
+            if (behavior == SoloAgentBehavior::Seek) {
 
             } else if (behavior == SoloAgentBehavior::Flee) {
 
@@ -519,27 +519,13 @@ int main(int argc, char *argv[]) {
     // Init world's physics.
     std::vector<SimplePointBody> bodies;
 
+
+
     // Init AIs.
     std::vector<SoloAgent> soloAgents;
     std::vector<SwarmAgent> swarmAgents;
 
-    for(SoloAgent& agent : soloAgents) {
-        // Which behavior(s) ?
-
-        // Which target ?
-
-        // Create body.
-    }
-
-    for(SwarmAgent& agent : swarmAgents) {
-        // Which behavior(s) ?
-
-        // Which target ?
-
-        // Which swarm ID ?
-
-        // Create body.
-    }
+    // Create a solo agent that seeks the cursor.
 
     // Init time management.
     sf::Clock gameClock;
